@@ -83,4 +83,200 @@
         </div>
         <div class="chart-wrap">
           <canvas id="bankrollChart"></canvas>
-        
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Derniers paris clôturés</h2>
+          <button class="link-btn" data-view="history">Voir tout</button>
+        </div>
+        <div id="recentBets"></div>
+      </div>
+    </section>
+
+    <section class="view" id="view-history">
+      <div class="view-header"><h1>Historique</h1></div>
+      <div class="filters-bar">
+        <select class="filter-select" id="hSport"><option value="">Tous les sports</option></select>
+        <select class="filter-select" id="hBookmaker"><option value="">Tous les bookmakers</option></select>
+        <select class="filter-select" id="hPeriod">
+          <option value="">Toute la période</option>
+          <option value="7">7 jours</option>
+          <option value="30">30 jours</option>
+          <option value="month">Ce mois</option>
+          <option value="year">Cette année</option>
+        </select>
+        <div class="pill-group" id="statusPills">
+          <button class="pill active" data-status="all">Tous</button>
+          <button class="pill" data-status="won">Gagnés</button>
+          <button class="pill" data-status="lost">Perdus</button>
+          <button class="pill" data-status="void">Annulés</button>
+          <button class="pill" data-status="freebet">Freebets</button>
+        </div>
+      </div>
+      <div id="historyList"></div>
+    </section>
+
+    <section class="view" id="view-open">
+      <div class="view-header"><h1>Paris en cours</h1></div>
+      <div id="openList"></div>
+    </section>
+
+    <section class="view" id="view-add">
+      <div class="view-header"><h1 id="formTitle">Nouveau pari</h1></div>
+      <form id="betForm" novalidate>
+        <input type="hidden" id="editingId">
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Screenshot</h2>
+            <span class="chip">OCR</span>
+          </div>
+          <p class="hint">Prends une photo ou ajoute un screenshot du ticket.</p>
+          <label class="dropzone" for="betImage">
+            <span id="dropzoneLabel">Appuie pour prendre une photo ou choisir une image</span>
+            <input type="file" id="betImage" accept="image/*" capture="environment" style="display:none">
+          </label>
+          <div class="ocr-row" id="ocrRow" style="display:none">
+            <img id="ocrThumb" alt="Aperçu" width="72" height="72">
+            <div>
+              <div class="ocr-status" id="ocrStatus">Analyse…</div>
+              <div class="ocr-extract" id="ocrExtract"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><h2>Informations</h2></div>
+          <div class="form-grid">
+            <div class="field full">
+              <label for="fTitle">Titre du pari *</label>
+              <input id="fTitle" type="text" required>
+            </div>
+            <div class="field">
+              <label for="fDate">Date *</label>
+              <input id="fDate" type="date" required>
+            </div>
+            <div class="field">
+              <label for="fSportField">Sport</label>
+              <input id="fSportField" type="text" list="sportList">
+              <datalist id="sportList"></datalist>
+            </div>
+            <div class="field">
+              <label for="fBookmakerField">Bookmaker</label>
+              <input id="fBookmakerField" type="text" list="bookmakerList">
+              <datalist id="bookmakerList"></datalist>
+            </div>
+            <div class="field">
+              <label for="fOdds">Cote *</label>
+              <input id="fOdds" type="number" min="1.01" step="0.01" required>
+            </div>
+            <div class="field">
+              <label for="fStake">Mise (€) *</label>
+              <input id="fStake" type="number" min="0.01" step="0.01" required>
+            </div>
+            <div class="field">
+              <label for="fPotential">Gain potentiel (€)</label>
+              <input id="fPotential" type="number" min="0" step="0.01">
+            </div>
+            <div class="field">
+              <label for="fStatus">Statut</label>
+              <select id="fStatus">
+                <option value="open">En cours</option>
+                <option value="won">Gagné</option>
+                <option value="lost">Perdu</option>
+                <option value="void">Annulé</option>
+              </select>
+            </div>
+          </div>
+
+          <label class="toggle-row">
+            <div>
+              <strong>Pari en freebet</strong>
+              <p class="hint">La mise n’est pas déduite de la bankroll.</p>
+            </div>
+            <div class="switch-wrap">
+              <input type="checkbox" id="fFreebet">
+              <span class="switch" aria-hidden="true"></span>
+            </div>
+          </label>
+
+          <div class="field" style="margin-top:var(--space-4)">
+            <label for="fNotes">Notes</label>
+            <textarea id="fNotes" rows="3"></textarea>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="submitBtn">Enregistrer le pari</button>
+          <button type="button" class="btn btn-ghost" id="cancelEdit" style="display:none">Annuler la modification</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="view" id="view-stats">
+      <div class="view-header"><h1>Statistiques</h1></div>
+      <div class="stats-grid">
+        <div class="panel stat-panel"><span class="metric-label">Bankroll actuelle</span><strong class="stat-val tabular" id="sBankroll">—</strong></div>
+        <div class="panel stat-panel"><span class="metric-label">P&L total</span><strong class="stat-val tabular" id="sPnl">—</strong></div>
+        <div class="panel stat-panel"><span class="metric-label">Paris gagnés</span><strong class="stat-val tabular" id="sWon">—</strong></div>
+        <div class="panel stat-panel"><span class="metric-label">Taux de réussite</span><strong class="stat-val tabular" id="sHit">—</strong></div>
+        <div class="panel stat-panel"><span class="metric-label">Cote moyenne</span><strong class="stat-val tabular" id="sOdds">—</strong></div>
+        <div class="panel stat-panel"><span class="metric-label">Total misé</span><strong class="stat-val tabular" id="sStaked">—</strong></div>
+      </div>
+
+      <div class="panel" style="margin-top:var(--space-4)">
+        <div class="panel-header"><h2>Répartition par sport</h2></div>
+        <div class="chart-wrap" style="max-height:260px"><canvas id="sportChart"></canvas></div>
+      </div>
+
+      <div class="panel" style="margin-top:var(--space-4)">
+        <div class="panel-header"><h2>Répartition gagnés / perdus</h2></div>
+        <div class="chart-wrap" style="max-height:260px"><canvas id="resultChart"></canvas></div>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="settingsBackdrop" aria-hidden="true">
+    <div class="modal" role="dialog" aria-label="Paramètres">
+      <div class="modal-header">
+        <h2>Paramètres</h2>
+        <button class="icon-btn" id="closeSettings" aria-label="Fermer">✕</button>
+      </div>
+      <div class="form-grid">
+        <div class="field full">
+          <label for="sBankrollStart">Bankroll de départ (€)</label>
+          <input id="sBankrollStart" type="number" step="0.01">
+        </div>
+        <div class="field">
+          <label for="sDefaultBookmaker">Bookmaker par défaut</label>
+          <input id="sDefaultBookmaker" type="text">
+        </div>
+        <div class="field">
+          <label for="sDefaultSport">Sport par défaut</label>
+          <input id="sDefaultSport" type="text">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="saveSettings">Sauvegarder</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="betDetailBackdrop" aria-hidden="true">
+    <div class="modal" role="dialog" aria-label="Détail du pari">
+      <div class="modal-header">
+        <h2 id="detailTitle">Détail</h2>
+        <button class="icon-btn" id="closeBetDetail" aria-label="Fermer">✕</button>
+      </div>
+      <div id="detailBody"></div>
+      <div id="detailEvents"></div>
+    </div>
+  </div>
+
+  <div class="toast-wrap" id="toastWrap" aria-live="polite"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
+</query>
