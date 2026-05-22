@@ -10,7 +10,10 @@ const S = {
 
 const $ = id => document.getElementById(id);
 const $$ = sel => Array.from(document.querySelectorAll(sel));
-const fmt = (v, dec = 2) => new Intl.NumberFormat('fr-FR', { minimumFractionDigits: dec, maximumFractionDigits: dec }).format(Number(v || 0)) + '€';
+const fmt = (v, dec = 2) => new Intl.NumberFormat('fr-FR', {
+  minimumFractionDigits: dec,
+  maximumFractionDigits: dec
+}).format(Number(v || 0)) + '€';
 const fmtOdds = v => Number(v || 0).toFixed(2);
 const today = () => new Date().toISOString().split('T')[0];
 const safeText = (id, value) => { const el = $(id); if (el) el.textContent = value; };
@@ -97,7 +100,9 @@ function navigate(view) {
 function populateSelect(id, items, current, placeholder) {
   const sel = $(id);
   if (!sel) return;
-  sel.innerHTML = `<option value="">${placeholder}</option>` + (items || []).map(i => `<option value="${i}" ${i === current ? 'selected' : ''}>${i}</option>`).join('');
+  sel.innerHTML =
+    `<option value="">${placeholder}</option>` +
+    (items || []).map(i => `<option value="${i}" ${i === current ? 'selected' : ''}>${i}</option>`).join('');
 }
 
 function computeLocalPnl(bet) {
@@ -156,6 +161,7 @@ async function loadDashboard() {
     const f = S.dashFilter;
     const range = f.period === 'custom' ? { start: f.dateStart, end: f.dateEnd } : periodRange(f.period);
     const params = new URLSearchParams();
+
     if (f.sport) params.set('sport', f.sport);
     if (f.bookmaker) params.set('bookmaker', f.bookmaker);
     if (range.start) params.set('period_start', range.start);
@@ -212,30 +218,74 @@ function drawBankrollChart(points) {
   const cs = getComputedStyle(document.documentElement);
   const primary = cs.getPropertyValue('--color-primary').trim();
   const muted = cs.getPropertyValue('--color-text-muted').trim();
+  const surface = cs.getPropertyValue('--color-surface').trim();
 
-  if (S.charts.bankroll) S.charts.bankroll.destroy();
+  const labels = points.map((p, i) => p.date || `Point ${i + 1}`);
+  const values = points.map(p => Number(p.value || 0));
+
+  if (S.charts.bankroll) {
+    S.charts.bankroll.destroy();
+  }
 
   S.charts.bankroll = new Chart(ctx, {
     type: 'line',
     data: {
-      labels: points.map((p, i) => p.date || String(i + 1)),
+      labels,
       datasets: [{
-        data: points.map(p => p.value),
+        label: 'Bankroll',
+        data: values,
         borderColor: primary,
-        backgroundColor: primary + '28',
-        tension: 0.35,
+        backgroundColor: primary + '22',
         fill: true,
+        tension: 0.3,
+        borderWidth: 3,
         pointRadius: 3,
-        pointHoverRadius: 5
+        pointHoverRadius: 5,
+        pointBackgroundColor: primary,
+        pointBorderColor: surface,
+        pointBorderWidth: 2
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label(context) {
+              return `Bankroll : ${fmt(context.raw)}`;
+            },
+            title(items) {
+              const idx = items[0]?.dataIndex ?? 0;
+              return points[idx]?.title || labels[idx];
+            }
+          }
+        }
+      },
       scales: {
-        x: { ticks: { color: muted, maxRotation: 0, autoSkip: true } },
-        y: { ticks: { color: muted } }
+        x: {
+          ticks: {
+            color: muted,
+            maxRotation: 0,
+            autoSkip: true
+          },
+          grid: {
+            display: false
+          }
+        },
+        y: {
+          ticks: {
+            color: muted,
+            callback(value) {
+              return fmt(value);
+            }
+          },
+          grid: {
+            color: primary + '14'
+          }
+        }
       }
     }
   });
@@ -246,6 +296,7 @@ async function loadHistory() {
     const f = S.histFilter;
     const range = periodRange(f.period);
     const params = new URLSearchParams();
+
     if (f.sport) params.set('sport', f.sport);
     if (f.bookmaker) params.set('bookmaker', f.bookmaker);
     if (range.start) params.set('period_start', range.start);
