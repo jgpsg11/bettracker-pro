@@ -124,19 +124,23 @@
     </section>
 
     <section class="view" id="view-add">
-      <div class="view-header"><h1 id="formTitle">Nouveau pari</h1></div>
+      <div class="view-header">
+        <h1 id="formTitle">Nouveau pari</h1>
+        <p class="view-subtitle">Ajoute un pari simple ou un combiné. Le titre se génère automatiquement à partir des sélections.</p>
+      </div>
+
       <form id="betForm" novalidate>
         <input type="hidden" id="editingId">
 
-        <div class="panel">
+        <div class="panel add-panel">
           <div class="panel-header">
             <h2>Screenshot</h2>
             <span class="chip">OCR</span>
           </div>
-          <p class="hint">Prends une photo ou ajoute un screenshot du ticket.</p>
+          <p class="hint">Tu peux choisir une image depuis la galerie iPhone ou prendre une photo.</p>
           <label class="dropzone" for="betImage">
-            <span id="dropzoneLabel">Appuie pour prendre une photo ou choisir une image</span>
-            <input type="file" id="betImage" accept="image/*" capture="environment" style="display:none">
+            <span id="dropzoneLabel">Choisir un screenshot ou prendre une photo</span>
+            <input type="file" id="betImage" accept="image/*" style="display:none">
           </label>
           <div class="ocr-row" id="ocrRow" style="display:none">
             <img id="ocrThumb" alt="Aperçu" width="72" height="72">
@@ -147,39 +151,18 @@
           </div>
         </div>
 
-        <div class="panel">
-          <div class="panel-header"><h2>Informations</h2></div>
-          <div class="form-grid">
-            <div class="field full">
-              <label for="fTitle">Titre du pari *</label>
-              <input id="fTitle" type="text" required>
-            </div>
+        <div class="panel add-panel">
+          <div class="panel-header">
+            <h2>Informations du pari</h2>
+            <span class="chip" id="betTypeBadge">Simple</span>
+          </div>
+
+          <div class="form-grid better-grid">
             <div class="field">
               <label for="fDate">Date *</label>
               <input id="fDate" type="date" required>
             </div>
-            <div class="field">
-              <label for="fSportField">Sport</label>
-              <input id="fSportField" type="text" list="sportList">
-              <datalist id="sportList"></datalist>
-            </div>
-            <div class="field">
-              <label for="fBookmakerField">Bookmaker</label>
-              <input id="fBookmakerField" type="text" list="bookmakerList">
-              <datalist id="bookmakerList"></datalist>
-            </div>
-            <div class="field">
-              <label for="fOdds">Cote *</label>
-              <input id="fOdds" type="number" min="1.01" step="0.01" required>
-            </div>
-            <div class="field">
-              <label for="fStake">Mise (€) *</label>
-              <input id="fStake" type="number" min="0.01" step="0.01" required>
-            </div>
-            <div class="field">
-              <label for="fPotential">Gain potentiel (€)</label>
-              <input id="fPotential" type="number" min="0" step="0.01">
-            </div>
+
             <div class="field">
               <label for="fStatus">Statut</label>
               <select id="fStatus">
@@ -188,6 +171,33 @@
                 <option value="lost">Perdu</option>
                 <option value="void">Annulé</option>
               </select>
+            </div>
+
+            <div class="field">
+              <label for="fSportField">Sport</label>
+              <input id="fSportField" type="text" list="sportList" placeholder="Football, Tennis...">
+              <datalist id="sportList"></datalist>
+            </div>
+
+            <div class="field">
+              <label for="fBookmakerField">Bookmaker</label>
+              <input id="fBookmakerField" type="text" list="bookmakerList" placeholder="Bet365, Winamax...">
+              <datalist id="bookmakerList"></datalist>
+            </div>
+
+            <div class="field">
+              <label for="fOdds">Cote totale *</label>
+              <input id="fOdds" type="number" min="1.01" step="0.01" required>
+            </div>
+
+            <div class="field">
+              <label for="fStake">Mise (€) *</label>
+              <input id="fStake" type="number" min="0.01" step="0.01" required>
+            </div>
+
+            <div class="field full">
+              <label for="fPotential">Gain potentiel (€)</label>
+              <input id="fPotential" type="number" min="0" step="0.01">
             </div>
           </div>
 
@@ -201,11 +211,20 @@
               <span class="switch" aria-hidden="true"></span>
             </div>
           </label>
+        </div>
 
-          <div class="field" style="margin-top:var(--space-4)">
-            <label for="fNotes">Notes</label>
-            <textarea id="fNotes" rows="3"></textarea>
+        <div class="panel add-panel">
+          <div class="panel-header">
+            <h2>Sélections du pari</h2>
+            <button type="button" class="btn btn-ghost btn-small" id="addSelectionBtn">Ajouter une sélection</button>
           </div>
+
+          <div class="auto-title-box">
+            <span class="metric-label">Titre généré automatiquement</span>
+            <div id="generatedTitle" class="generated-title">Aucune sélection pour le moment.</div>
+          </div>
+
+          <div id="selectionsList" class="selections-list"></div>
         </div>
 
         <div class="form-actions">
@@ -223,7 +242,7 @@
         <div class="panel stat-panel"><span class="metric-label">Paris gagnés</span><strong class="stat-val tabular" id="sWon">—</strong></div>
         <div class="panel stat-panel"><span class="metric-label">Taux de réussite</span><strong class="stat-val tabular" id="sHit">—</strong></div>
         <div class="panel stat-panel"><span class="metric-label">Cote moyenne</span><strong class="stat-val tabular" id="sOdds">—</strong></div>
-        <div class="panel stat-panel"><span class="metric-label">Total misé</span><strong class="stat-val tabular" id="sStaked">—</strong></div>
+        <div class="panel stat-panel"><span class="metric-label">Nombre total de paris</span><strong class="stat-val tabular" id="sTotalBets">—</strong></div>
       </div>
 
       <div class="panel" style="margin-top:var(--space-4)">
@@ -279,4 +298,3 @@
   <script src="/app.js"></script>
 </body>
 </html>
-</query>
