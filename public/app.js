@@ -505,6 +505,212 @@ function serializeSelections() {
   );
 }
 
+function normalizeMatchLine(line) {
+  return (line || '')
+    .replace(/\s+/g, ' ')
+    .replace(/[|]/g, ' - ')
+    .replace(/\s+[•·]\s*/g, ' ')
+    .trim();
+}
+
+function normalizePickLine(line) {
+  let out = (line || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (/^vainqueur\s+/i.test(out) && !/^vainqueur\s*:/i.test(out)) {
+    out = out.replace(/^vainqueur\s+/i, 'Vainqueur : ');
+  }
+
+  return out;
+}
+
+function cleanPlayerLine(line) {
+  return (line || '')
+    .replace(/^[^\p{L}\p{N}]*/u, '')
+    .replace(/\s+[0-9]+\s*$/u, '')
+    .replace(/[•·]$/u, '')
+    .trim();
+}
+
+function fillSelectionsFromOCR(selections) {
+  if (!selections || !selections.length) {
+    S.selections = [createEmptySelection()];
+    renderSelections();
+    return;
+  }
+
+  S.selections = selections.map(sel => ({
+    match: sel.match || '',
+    pick: sel.pick || '',
+    odds: sel.odds || ''
+  }));
+
+  renderSelections();
+}
+
+async function preprocessImageForOCR(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    img.onload = () => {
+      const scale = 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+
+        const gray = 255 - Math.round((r + g + b) / 3);
+        const boost = gray > 140 ? 255 : 0;
+
+        data[i] = boost;
+        data[i + 1] = boost;
+        data[i + 2] = boost;
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/png'));
+    };
+
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+function extractBetDataFromText(text) {
+  const raw = text || '';
+  const lines = raw
+    .split(/\n+/)
+    .map(l => l.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  let stake = '';
+  let potential = '';
+  let totalOdds = '';
+  const freebet = /free ?bet|bonus|gratuit/i.test(raw);
+  const selections = [];
+
+  const moneyFromLine = (line) => {
+    const m = line.match(/(\d+(?:[.,]\d{1,2})?)\s*€/i);
+    return m ? +m[1].replace(',', '.') : '';
+  };
+
+  const oddsAtEnd = (line) => {
+    const m = line.match(/(\d+(?:[.,]\d{1,2}))\s*$/);
+    if (!m) return '';
+    const n = +m[1].replace(',', '.');
+    return n >= 1.01 && n <= 100 ? n : '';
+  };
+
+  const stripOddsAtEnd = (line) => line.replace(/(\d+(?:[.,]\d{1,2}))\s*$/, '').trim();
+
+  const looksLikeMeta = (line) => {
+    return /en cours|simple|combiné|live|réf|compléter|cashout|mise|gains potentiels|gain potentiel|mai|juin|juil|août|sept|oct|nov|déc|aj\.|ref/i.test((line || '').toLowerCase());
+  };
+
+  const looksLikePick = (line) => {
+    return /vainqueur|double chance|plus de|moins de|over|under|handicap|btts|les deux equipes/i.test((line || '').toLowerCase());
+  };
+
+  const looksLikePlayerLine = (line) => {
+    if (!line) return false;
+    if (looksLikeMeta(line)) return false;
+    if (looksLikePick(line)) return false;
+    if (moneyFromLine(line)) return false;
+    if (oddsAtEnd(line)) return false;
+    return /[a-zà-ÿ]/i.test(line);
+  };
+
+  const looksLikeDirectMatch = (line) => {
+    return / - | — | vs | v\. /i.test(line || '');
+  };
+
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    if (!stake && /mise|stake/i.test(lower)) stake = moneyFromLine(line);
+    if (!potential && /gain|gains potentiels|retour|payout|potential/i.test(lower)) potential = moneyFromLine(line);
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (looksLikeMeta(line)) continue;
+
+    const odd = oddsAtEnd(line);
+    if (!odd) continue;
+
+    const rawPick = stripOddsAtEnd(line);
+    if (!looksLikePick(rawPick)) continue;
+
+    const next1 = cleanPlayerLine(lines[i + 1] || '');
+    const next2 = cleanPlayerLine(lines[i + 2] || '');
+
+    let match = '';
+
+    if (next1 && next2 && looksLikePlayerLine(next1) && looksLikePlayerLine(next2)) {
+      match = `${next1} - ${next2}`;
+    } else if (next1 && looksLikeDirectMatch(next1)) {
+      match = normalizeMatchLine(next1);
+    }
+
+    const pick = normalizePickLine(rawPick);
+
+    if (pick && match) {
+      selections.push({
+        match,
+        pick,
+        odds: odd
+      });
+    }
+  }
+
+  if (!stake) {
+    const moneyValues = lines.map(moneyFromLine).filter(Boolean);
+    if (moneyValues.length) stake = moneyValues[0];
+  }
+
+  if (!potential) {
+    const moneyValues = lines.map(moneyFromLine).filter(Boolean);
+    if (moneyValues.length >= 2) potential = Math.max(...moneyValues);
+  }
+
+  if (selections.length === 1) {
+    totalOdds = selections[0].odds || '';
+  } else if (selections.length > 1) {
+    totalOdds = +selections.reduce((acc, s) => acc * Number(s.odds || 1), 1).toFixed(2);
+  }
+
+  if (!totalOdds && stake && potential) {
+    const ratio = +(potential / stake).toFixed(2);
+    if (ratio >= 1.01 && ratio <= 100) totalOdds = ratio;
+  }
+
+  let sport = '';
+  if (/tennis|teichmann|marcinko|kudermetova|wang/i.test(raw)) sport = 'Tennis';
+  else if (/football|soccer/i.test(raw)) sport = 'Football';
+  else if (/basket/i.test(raw)) sport = 'Basketball';
+
+  return {
+    totalOdds,
+    stake,
+    potential,
+    freebet,
+    sport,
+    selections
+  };
+}
+
 document.body?.addEventListener('click', async e => {
   const nav = e.target.closest('[data-view]');
   if (nav) return navigate(nav.dataset.view);
@@ -702,6 +908,7 @@ $('betImage')?.addEventListener('change', async e => {
   if ($('ocrRow')) $('ocrRow').style.display = 'grid';
 
   safeText('ocrStatus', 'Analyse OCR en cours…');
+  safeText('ocrExtract', '');
 
   const fd = new FormData();
   fd.append('image', file);
@@ -715,7 +922,11 @@ $('betImage')?.addEventListener('change', async e => {
   try {
     if (typeof Tesseract === 'undefined') throw new Error('OCR indisponible');
 
-    const { data } = await Tesseract.recognize(file, 'eng+fra');
+    const processedImage = await preprocessImageForOCR(file);
+    const { data } = await Tesseract.recognize(processedImage, 'eng+fra', {
+      logger: () => {}
+    });
+
     const extracted = extractBetDataFromText(data.text || '');
 
     if (extracted.totalOdds && $('fOdds')) $('fOdds').value = extracted.totalOdds;
@@ -724,10 +935,7 @@ $('betImage')?.addEventListener('change', async e => {
     if (extracted.freebet && $('fFreebet')) $('fFreebet').checked = true;
     if (extracted.sport && $('fSportField') && !$('fSportField').value) $('fSportField').value = extracted.sport;
 
-    if (extracted.selections?.length) {
-      S.selections = extracted.selections;
-      renderSelections();
-    }
+    fillSelectionsFromOCR(extracted.selections);
 
     safeText(
       'ocrExtract',
@@ -735,130 +943,21 @@ $('betImage')?.addEventListener('change', async e => {
         extracted.totalOdds ? `Cote totale ${String(extracted.totalOdds).replace('.', ',')}` : '',
         extracted.stake ? `Mise ${fmt(extracted.stake)}` : '',
         extracted.potential ? `Gain ${fmt(extracted.potential)}` : '',
-        extracted.selections?.length ? `${extracted.selections.length} sélection(s)` : '',
-        extracted.freebet ? 'Freebet détecté' : ''
+        extracted.selections?.length ? `${extracted.selections.length} sélection(s) détectée(s)` : 'Aucune sélection détectée'
       ].filter(Boolean).join(' · ')
     );
 
-    safeText('ocrStatus', 'Extraction terminée.');
+    safeText(
+      'ocrStatus',
+      extracted.selections?.length ? 'Extraction terminée.' : 'Texte lu, mais sélection non détectée.'
+    );
+
     recalcPotential();
   } catch (err) {
     console.error(err);
     safeText('ocrStatus', 'OCR indisponible, complète à la main.');
   }
 });
-
-function extractBetDataFromText(text) {
-  const raw = text || '';
-  const lines = raw
-    .split(/\n+/)
-    .map(l => l.replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
-
-  let stake = '';
-  let potential = '';
-  let totalOdds = '';
-  const freebet = /free ?bet|bonus|gratuit/i.test(raw);
-
-  const selections = [];
-
-  const cleanOdds = (str) => {
-    if (!str) return '';
-    const n = +String(str).replace(',', '.');
-    return n >= 1.01 && n <= 100 ? n : '';
-  };
-
-  const moneyFromLine = (line) => {
-    const m = line.match(/(\d+(?:[.,]\d{1,2})?)\s*€/i);
-    return m ? +m[1].replace(',', '.') : '';
-  };
-
-  const oddsAtEnd = (line) => {
-    const m = line.match(/(\d+(?:[.,]\d{1,2}))\s*$/);
-    return m ? cleanOdds(m[1]) : '';
-  };
-
-  const stripOddsAtEnd = (line) => line.replace(/(\d+(?:[.,]\d{1,2}))\s*$/, '').trim();
-
-  const looksLikeMatch = (line) => {
-    if (!line) return false;
-    return / - | — | vs | v\. /i.test(line);
-  };
-
-  const looksLikeMeta = (line) => {
-    return /en cours|simple|combiné|aj\.|réf|compléter|mise|gains potentiels|cash out|pari/i.test(line.toLowerCase());
-  };
-
-  for (const line of lines) {
-    const lower = line.toLowerCase();
-
-    if (!stake && /mise|stake/i.test(lower)) {
-      stake = moneyFromLine(line);
-    }
-
-    if (!potential && /gain|gains potentiels|retour|payout|potential/i.test(lower)) {
-      potential = moneyFromLine(line);
-    }
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const next = lines[i + 1] || '';
-
-    if (looksLikeMeta(line)) continue;
-
-    const odd = oddsAtEnd(line);
-    if (!odd) continue;
-
-    if (looksLikeMatch(next)) {
-      const pick = stripOddsAtEnd(line);
-      const match = next.trim();
-
-      if (pick && match) {
-        selections.push({
-          match,
-          pick,
-          odds: odd
-        });
-      }
-    }
-  }
-
-  if (!stake) {
-    const moneyValues = lines.map(moneyFromLine).filter(Boolean);
-    if (moneyValues.length) stake = moneyValues[0];
-  }
-
-  if (!potential) {
-    const moneyValues = lines.map(moneyFromLine).filter(Boolean);
-    if (moneyValues.length >= 2) potential = Math.max(...moneyValues);
-  }
-
-  if (selections.length === 1) {
-    totalOdds = selections[0].odds || '';
-  } else if (selections.length > 1) {
-    totalOdds = +selections.reduce((acc, s) => acc * Number(s.odds || 1), 1).toFixed(2);
-  }
-
-  if (!totalOdds && stake && potential) {
-    const ratio = +(potential / stake).toFixed(2);
-    if (ratio >= 1.01 && ratio <= 100) totalOdds = ratio;
-  }
-
-  let sport = '';
-  if (/tennis/i.test(raw)) sport = 'Tennis';
-  else if (/football|soccer/i.test(raw)) sport = 'Football';
-  else if (/basket/i.test(raw)) sport = 'Basketball';
-
-  return {
-    totalOdds,
-    stake,
-    potential,
-    freebet,
-    sport,
-    selections: selections.length ? selections : [createEmptySelection()]
-  };
-}
 
 $('settingsBtn')?.addEventListener('click', async () => {
   try {
