@@ -110,20 +110,11 @@ function computeLocalPnl(bet) {
   const payout = Number(bet.potential_payout || 0);
 
   if (bet.status === 'won') {
-    if (bet.is_freebet) {
-      return payout > stake ? payout - stake : payout;
-    }
+    if (bet.is_freebet) return payout > stake ? payout - stake : payout;
     return payout - stake;
   }
-
-  if (bet.status === 'lost') {
-    return bet.is_freebet ? 0 : -stake;
-  }
-
-  if (bet.status === 'void') {
-    return 0;
-  }
-
+  if (bet.status === 'lost') return bet.is_freebet ? 0 : -stake;
+  if (bet.status === 'void') return 0;
   return 0;
 }
 
@@ -223,9 +214,7 @@ function drawBankrollChart(points) {
   const labels = points.map((p, i) => p.date || `Point ${i + 1}`);
   const values = points.map(p => Number(p.value || 0));
 
-  if (S.charts.bankroll) {
-    S.charts.bankroll.destroy();
-  }
+  if (S.charts.bankroll) S.charts.bankroll.destroy();
 
   S.charts.bankroll = new Chart(ctx, {
     type: 'line',
@@ -266,25 +255,15 @@ function drawBankrollChart(points) {
       },
       scales: {
         x: {
-          ticks: {
-            color: muted,
-            maxRotation: 0,
-            autoSkip: true
-          },
-          grid: {
-            display: false
-          }
+          ticks: { color: muted, maxRotation: 0, autoSkip: true },
+          grid: { display: false }
         },
         y: {
           ticks: {
             color: muted,
-            callback(value) {
-              return fmt(value);
-            }
+            callback(value) { return fmt(value); }
           },
-          grid: {
-            color: primary + '14'
-          }
+          grid: { color: primary + '14' }
         }
       }
     }
@@ -481,9 +460,7 @@ function renderSelections() {
 function updateGeneratedTitle() {
   const filled = S.selections.filter(s => s.match?.trim() || s.pick?.trim() || s.odds);
   const badge = $('betTypeBadge');
-
   if (badge) badge.textContent = filled.length > 1 ? `Combiné ${filled.length}` : 'Simple';
-
   const title = buildGeneratedTitle();
   safeText('generatedTitle', title || 'Aucune sélection pour le moment.');
 }
@@ -491,11 +468,7 @@ function updateGeneratedTitle() {
 function buildGeneratedTitle() {
   const filled = S.selections.filter(s => s.match?.trim() || s.pick?.trim() || s.odds);
   if (!filled.length) return '';
-
-  if (filled.length === 1) {
-    return filled[0].match?.trim() || '';
-  }
-
+  if (filled.length === 1) return filled[0].match?.trim() || '';
   return `${filled.length} sélections · ` + filled.map(s => s.match?.trim() || 'Match').join(' | ');
 }
 
@@ -505,28 +478,25 @@ function serializeSelections() {
   );
 }
 
-function normalizeMatchLine(line) {
-  return (line || '')
-    .replace(/\s+/g, ' ')
-    .replace(/[|]/g, ' - ')
-    .replace(/\s+[•·]\s*/g, ' ')
-    .trim();
+function normalizeSpaces(str) {
+  return (str || '').replace(/\s+/g, ' ').trim();
 }
 
 function normalizePickLine(line) {
-  let out = (line || '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
+  let out = normalizeSpaces(line);
+  out = out.replace(/[‘’]/g, "'");
   if (/^vainqueur\s+/i.test(out) && !/^vainqueur\s*:/i.test(out)) {
     out = out.replace(/^vainqueur\s+/i, 'Vainqueur : ');
   }
-
   return out;
 }
 
+function normalizeMatchLine(line) {
+  return normalizeSpaces(line).replace(/[|]/g, ' - ');
+}
+
 function cleanPlayerLine(line) {
-  return (line || '')
+  return normalizeSpaces(line)
     .replace(/^[^\p{L}\p{N}]*/u, '')
     .replace(/\s+[0-9]+\s*$/u, '')
     .replace(/[•·]$/u, '')
@@ -537,7 +507,7 @@ function fillSelectionsFromOCR(selections) {
   if (!selections || !selections.length) {
     S.selections = [createEmptySelection()];
     renderSelections();
-    return;
+    return false;
   }
 
   S.selections = selections.map(sel => ({
@@ -547,115 +517,73 @@ function fillSelectionsFromOCR(selections) {
   }));
 
   renderSelections();
+  return true;
 }
 
-async function preprocessImageForOCR(file) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-
-    img.onload = () => {
-      const scale = 2;
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width * scale;
-      canvas.height = img.height * scale;
-
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
-
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i];
-        const g = data[i + 1];
-        const b = data[i + 2];
-
-        const gray = 255 - Math.round((r + g + b) / 3);
-        const boost = gray > 140 ? 255 : 0;
-
-        data[i] = boost;
-        data[i + 1] = boost;
-        data[i + 2] = boost;
-      }
-
-      ctx.putImageData(imageData, 0, 0);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL('image/png'));
-    };
-
-    img.onerror = reject;
-    img.src = url;
-  });
+function parseFrenchNumber(input) {
+  if (input === null || input === undefined) return '';
+  const cleaned = String(input)
+    .replace(/\s/g, '')
+    .replace(/€/g, '')
+    .replace(/[^\d,.-]/g, '')
+    .replace(',', '.');
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : '';
 }
 
-function extractBetDataFromText(text) {
-  const raw = text || '';
-  const lines = raw
-    .split(/\n+/)
-    .map(l => l.replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
+function findLabeledAmount(raw, labels) {
+  const escaped = labels.map(l => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const regex = new RegExp(`(?:${escaped})\\s*[:\\-]?\\s*(\\d+(?:[.,]\\d{1,2})?)\\s*€?`, 'i');
+  const m = raw.match(regex);
+  if (m) return parseFrenchNumber(m[1]);
+  return '';
+}
 
-  let stake = '';
-  let potential = '';
-  let totalOdds = '';
-  const freebet = /free ?bet|bonus|gratuit/i.test(raw);
+function computePotentialFromOddsAndStake(odds, stake) {
+  const o = Number(odds || 0);
+  const s = Number(stake || 0);
+  if (!o || !s) return '';
+  return +(o * s).toFixed(2);
+}
+
+function looksLikeMeta(line) {
+  return /en cours|simple|combiné|live|réf|ref|compléter|cashout|mise|gains potentiels|gain potentiel|pari en freebet|bookmaker|statut|date|sport|aj\.|mai|juin|juil|août|sept|oct|nov|déc|auj\./i.test((line || '').toLowerCase());
+}
+
+function looksLikePick(line) {
+  return /vainqueur|double chance|plus de|moins de|over|under|handicap|btts|les deux equipes|les deux équipes/i.test((line || '').toLowerCase());
+}
+
+function looksLikeDirectMatch(line) {
+  return / - | — | vs | v\. /i.test(line || '');
+}
+
+function looksLikePlayerLine(line) {
+  if (!line) return false;
+  if (looksLikeMeta(line)) return false;
+  if (looksLikePick(line)) return false;
+  if (/^\d+(?:[.,]\d+)?$/.test(line)) return false;
+  return /[a-zà-ÿ]/i.test(line);
+}
+
+function extractSelectionsFromLines(lines) {
   const selections = [];
 
-  const moneyFromLine = (line) => {
-    const m = line.match(/(\d+(?:[.,]\d{1,2})?)\s*€/i);
-    return m ? +m[1].replace(',', '.') : '';
-  };
-
-  const oddsAtEnd = (line) => {
-    const m = line.match(/(\d+(?:[.,]\d{1,2}))\s*$/);
-    if (!m) return '';
-    const n = +m[1].replace(',', '.');
-    return n >= 1.01 && n <= 100 ? n : '';
-  };
-
-  const stripOddsAtEnd = (line) => line.replace(/(\d+(?:[.,]\d{1,2}))\s*$/, '').trim();
-
-  const looksLikeMeta = (line) => {
-    return /en cours|simple|combiné|live|réf|compléter|cashout|mise|gains potentiels|gain potentiel|mai|juin|juil|août|sept|oct|nov|déc|aj\.|ref/i.test((line || '').toLowerCase());
-  };
-
-  const looksLikePick = (line) => {
-    return /vainqueur|double chance|plus de|moins de|over|under|handicap|btts|les deux equipes/i.test((line || '').toLowerCase());
-  };
-
-  const looksLikePlayerLine = (line) => {
-    if (!line) return false;
-    if (looksLikeMeta(line)) return false;
-    if (looksLikePick(line)) return false;
-    if (moneyFromLine(line)) return false;
-    if (oddsAtEnd(line)) return false;
-    return /[a-zà-ÿ]/i.test(line);
-  };
-
-  const looksLikeDirectMatch = (line) => {
-    return / - | — | vs | v\. /i.test(line || '');
-  };
-
-  for (const line of lines) {
-    const lower = line.toLowerCase();
-    if (!stake && /mise|stake/i.test(lower)) stake = moneyFromLine(line);
-    if (!potential && /gain|gains potentiels|retour|payout|potential/i.test(lower)) potential = moneyFromLine(line);
-  }
-
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (looksLikeMeta(line)) continue;
+    const line = normalizeSpaces(lines[i]);
+    if (!line || looksLikeMeta(line)) continue;
 
-    const odd = oddsAtEnd(line);
-    if (!odd) continue;
+    const oddMatch = line.match(/(\d+(?:[.,]\d{1,2}))\s*$/);
+    if (!oddMatch) continue;
 
-    const rawPick = stripOddsAtEnd(line);
+    const odd = parseFrenchNumber(oddMatch[1]);
+    if (!odd || odd < 1.01 || odd > 100) continue;
+
+    const rawPick = normalizeSpaces(line.replace(/(\d+(?:[.,]\d{1,2}))\s*$/, ''));
     if (!looksLikePick(rawPick)) continue;
 
     const next1 = cleanPlayerLine(lines[i + 1] || '');
     const next2 = cleanPlayerLine(lines[i + 2] || '');
-
     let match = '';
 
     if (next1 && next2 && looksLikePlayerLine(next1) && looksLikePlayerLine(next2)) {
@@ -664,36 +592,77 @@ function extractBetDataFromText(text) {
       match = normalizeMatchLine(next1);
     }
 
-    const pick = normalizePickLine(rawPick);
-
-    if (pick && match) {
+    if (match) {
       selections.push({
         match,
-        pick,
-        odds: odd
+        pick: normalizePickLine(rawPick),
+        odds: +odd.toFixed(2)
       });
     }
   }
 
+  return selections;
+}
+
+function extractBetDataFromText(text) {
+  const raw = text || '';
+  const lines = raw
+    .split(/\n+/)
+    .map(l => normalizeSpaces(l))
+    .filter(Boolean);
+
+  const freebet = /free ?bet|bonus|gratuit/i.test(raw);
+  let stake =
+    findLabeledAmount(raw, ['Mise', 'Stake']) ||
+    findLabeledAmount(raw, ['Mise€', 'Mise €']) ||
+    '';
+  let potential =
+    findLabeledAmount(raw, ['Gains potentiels', 'Gain potentiel', 'Payout', 'Potential payout', 'Retour']) ||
+    '';
+
+  let selections = extractSelectionsFromLines(lines);
+
   if (!stake) {
-    const moneyValues = lines.map(moneyFromLine).filter(Boolean);
-    if (moneyValues.length) stake = moneyValues[0];
+    const amounts = [];
+    for (const line of lines) {
+      const m = line.match(/(\d+(?:[.,]\d{1,2})?)\s*€/g);
+      if (m) {
+        m.forEach(val => {
+          const n = parseFrenchNumber(val);
+          if (n) amounts.push(n);
+        });
+      }
+    }
+    if (amounts.length) stake = amounts[0];
+    if (!potential && amounts.length > 1) potential = Math.max(...amounts);
   }
 
-  if (!potential) {
-    const moneyValues = lines.map(moneyFromLine).filter(Boolean);
-    if (moneyValues.length >= 2) potential = Math.max(...moneyValues);
-  }
-
+  let totalOdds = '';
   if (selections.length === 1) {
-    totalOdds = selections[0].odds || '';
+    totalOdds = +Number(selections[0].odds).toFixed(2);
   } else if (selections.length > 1) {
     totalOdds = +selections.reduce((acc, s) => acc * Number(s.odds || 1), 1).toFixed(2);
   }
 
   if (!totalOdds && stake && potential) {
-    const ratio = +(potential / stake).toFixed(2);
+    const ratio = +(Number(potential) / Number(stake)).toFixed(2);
     if (ratio >= 1.01 && ratio <= 100) totalOdds = ratio;
+  }
+
+  if (!potential && totalOdds && stake) {
+    potential = computePotentialFromOddsAndStake(totalOdds, stake);
+  }
+
+  if (potential && stake && Number(potential) < Number(stake) && totalOdds && Number(totalOdds) > 1) {
+    potential = computePotentialFromOddsAndStake(totalOdds, stake);
+  }
+
+  if (!selections.length && totalOdds) {
+    selections = [{
+      match: '',
+      pick: '',
+      odds: totalOdds
+    }];
   }
 
   let sport = '';
@@ -709,6 +678,92 @@ function extractBetDataFromText(text) {
     sport,
     selections
   };
+}
+
+async function preprocessImageForOCR(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    img.onload = () => {
+      const scale = 3;
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+
+        const inverted = 255 - Math.round((r + g + b) / 3);
+        const threshold = inverted > 120 ? 255 : 0;
+
+        data[i] = threshold;
+        data[i + 1] = threshold;
+        data[i + 2] = threshold;
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/png'));
+    };
+
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+function applyOCRResult(extracted) {
+  const parsedSelections = extracted.selections || [];
+  const hasSelections = fillSelectionsFromOCR(parsedSelections);
+
+  let totalOdds = extracted.totalOdds;
+  if ((!totalOdds || Number(totalOdds) <= 0) && parsedSelections.length === 1) {
+    totalOdds = parsedSelections[0].odds || '';
+  }
+  if ((!totalOdds || Number(totalOdds) <= 0) && parsedSelections.length > 1) {
+    totalOdds = +parsedSelections.reduce((acc, s) => acc * Number(s.odds || 1), 1).toFixed(2);
+  }
+
+  if (totalOdds && $('fOdds')) $('fOdds').value = totalOdds;
+  if (extracted.stake && $('fStake')) $('fStake').value = extracted.stake;
+  if (extracted.freebet && $('fFreebet')) $('fFreebet').checked = true;
+  if (extracted.sport && $('fSportField') && !$('fSportField').value) $('fSportField').value = extracted.sport;
+
+  let potential = extracted.potential;
+  if ((!potential || Number(potential) <= 0) && totalOdds && $('fStake')?.value) {
+    potential = computePotentialFromOddsAndStake(totalOdds, $('fStake').value);
+  }
+  if (potential && $('fPotential')) $('fPotential').value = potential;
+
+  if ((!potential || Number(potential) < Number($('fStake')?.value || 0)) && totalOdds && $('fStake')?.value) {
+    const computed = computePotentialFromOddsAndStake(totalOdds, $('fStake').value);
+    if (computed && $('fPotential')) $('fPotential').value = computed;
+  }
+
+  updateGeneratedTitle();
+
+  safeText(
+    'ocrExtract',
+    [
+      totalOdds ? `Cote totale ${String(totalOdds).replace('.', ',')}` : '',
+      $('fStake')?.value ? `Mise ${fmt($('fStake').value)}` : '',
+      $('fPotential')?.value ? `Gain ${fmt($('fPotential').value)}` : '',
+      hasSelections ? `${parsedSelections.length} sélection(s) détectée(s)` : 'Aucune sélection détectée'
+    ].filter(Boolean).join(' · ')
+  );
+
+  safeText(
+    'ocrStatus',
+    hasSelections ? 'Extraction terminée.' : 'Texte lu, mais sélection non détectée.'
+  );
 }
 
 document.body?.addEventListener('click', async e => {
@@ -928,31 +983,7 @@ $('betImage')?.addEventListener('change', async e => {
     });
 
     const extracted = extractBetDataFromText(data.text || '');
-
-    if (extracted.totalOdds && $('fOdds')) $('fOdds').value = extracted.totalOdds;
-    if (extracted.stake && $('fStake')) $('fStake').value = extracted.stake;
-    if (extracted.potential && $('fPotential')) $('fPotential').value = extracted.potential;
-    if (extracted.freebet && $('fFreebet')) $('fFreebet').checked = true;
-    if (extracted.sport && $('fSportField') && !$('fSportField').value) $('fSportField').value = extracted.sport;
-
-    fillSelectionsFromOCR(extracted.selections);
-
-    safeText(
-      'ocrExtract',
-      [
-        extracted.totalOdds ? `Cote totale ${String(extracted.totalOdds).replace('.', ',')}` : '',
-        extracted.stake ? `Mise ${fmt(extracted.stake)}` : '',
-        extracted.potential ? `Gain ${fmt(extracted.potential)}` : '',
-        extracted.selections?.length ? `${extracted.selections.length} sélection(s) détectée(s)` : 'Aucune sélection détectée'
-      ].filter(Boolean).join(' · ')
-    );
-
-    safeText(
-      'ocrStatus',
-      extracted.selections?.length ? 'Extraction terminée.' : 'Texte lu, mais sélection non détectée.'
-    );
-
-    recalcPotential();
+    applyOCRResult(extracted);
   } catch (err) {
     console.error(err);
     safeText('ocrStatus', 'OCR indisponible, complète à la main.');
