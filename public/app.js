@@ -584,18 +584,24 @@ function extractSelectionsFromLines(lines) {
 
     const next1 = cleanPlayerLine(lines[i + 1] || '');
     const next2 = cleanPlayerLine(lines[i + 2] || '');
+    const next3 = cleanPlayerLine(lines[i + 3] || '');
+
     let match = '';
 
     if (next1 && next2 && looksLikePlayerLine(next1) && looksLikePlayerLine(next2)) {
       match = `${next1} - ${next2}`;
     } else if (next1 && looksLikeDirectMatch(next1)) {
       match = normalizeMatchLine(next1);
+    } else if (next2 && next3 && looksLikePlayerLine(next2) && looksLikePlayerLine(next3)) {
+      match = `${next2} - ${next3}`;
     }
 
-    if (match) {
+    const pick = normalizePickLine(rawPick);
+
+    if (pick || match) {
       selections.push({
-        match,
-        pick: normalizePickLine(rawPick),
+        match: match || '',
+        pick: pick || '',
         odds: +odd.toFixed(2)
       });
     }
@@ -612,10 +618,12 @@ function extractBetDataFromText(text) {
     .filter(Boolean);
 
   const freebet = /free ?bet|bonus|gratuit/i.test(raw);
+
   let stake =
     findLabeledAmount(raw, ['Mise', 'Stake']) ||
     findLabeledAmount(raw, ['Mise€', 'Mise €']) ||
     '';
+
   let potential =
     findLabeledAmount(raw, ['Gains potentiels', 'Gain potentiel', 'Payout', 'Potential payout', 'Retour']) ||
     '';
@@ -721,7 +729,16 @@ async function preprocessImageForOCR(file) {
 }
 
 function applyOCRResult(extracted) {
-  const parsedSelections = extracted.selections || [];
+  let parsedSelections = extracted.selections || [];
+
+  if ((!parsedSelections.length || (!parsedSelections[0]?.match && !parsedSelections[0]?.pick)) && extracted.totalOdds) {
+    parsedSelections = [{
+      match: '',
+      pick: '',
+      odds: extracted.totalOdds
+    }];
+  }
+
   const hasSelections = fillSelectionsFromOCR(parsedSelections);
 
   let totalOdds = extracted.totalOdds;
@@ -748,6 +765,7 @@ function applyOCRResult(extracted) {
     if (computed && $('fPotential')) $('fPotential').value = computed;
   }
 
+  renderSelections();
   updateGeneratedTitle();
 
   safeText(
@@ -756,13 +774,15 @@ function applyOCRResult(extracted) {
       totalOdds ? `Cote totale ${String(totalOdds).replace('.', ',')}` : '',
       $('fStake')?.value ? `Mise ${fmt($('fStake').value)}` : '',
       $('fPotential')?.value ? `Gain ${fmt($('fPotential').value)}` : '',
-      hasSelections ? `${parsedSelections.length} sélection(s) détectée(s)` : 'Aucune sélection détectée'
+      parsedSelections.length ? `${parsedSelections.length} sélection(s) détectée(s)` : 'Aucune sélection détectée'
     ].filter(Boolean).join(' · ')
   );
 
   safeText(
     'ocrStatus',
-    hasSelections ? 'Extraction terminée.' : 'Texte lu, mais sélection non détectée.'
+    parsedSelections.some(s => s.match || s.pick)
+      ? 'Extraction terminée.'
+      : 'Cote détectée, mais match/sélection non lus.'
   );
 }
 
